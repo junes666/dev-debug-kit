@@ -391,8 +391,16 @@ class HttpTool(QWidget):
         self.view_mode = QComboBox()
         self.view_mode.addItems(["格式化", "原始文本", "原始报文", "预览"])
         self.view_mode.currentIndexChanged.connect(self._render_body_view)
+
+        self.charset_combo = QComboBox()
+        self.charset_combo.addItems(
+            ["自动", "UTF-8", "GBK", "GB18030", "GB2312", "Big5", "Latin-1", "UTF-16"])
+        self.charset_combo.setToolTip("按所选字符集重新解码响应体，可修复乱码")
+        self.charset_combo.currentIndexChanged.connect(self._redecode)
+
         lay.addWidget(widgets.row(
-            widgets.label("视图：", "label"), self.view_mode, None,
+            widgets.label("视图：", "label"), self.view_mode,
+            widgets.label("字符集：", "label"), self.charset_combo, None,
             widgets.chip("复制", self._copy_response),
         ))
 
@@ -424,17 +432,22 @@ class HttpTool(QWidget):
         lay = QVBoxLayout(w)
         lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(8)
-        self.resp_headers_table = QTableWidget(0, 2)
-        self.resp_headers_table.setHorizontalHeaderLabels(["响应头", "值"])
-        self.resp_headers_table.verticalHeader().setVisible(False)
-        self.resp_headers_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.resp_headers_table.setWordWrap(True)
-        hh = self.resp_headers_table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Interactive)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        self.resp_headers_table.setColumnWidth(0, 200)
-        lay.addWidget(widgets.expanding(self.resp_headers_table), 1)
+        lay.addWidget(widgets.row(
+            widgets.label("每行一个响应头，格式  键: 值", "hint"), None,
+            widgets.chip("复制", self._copy_resp_headers, "复制全部响应头文本"),
+        ))
+        self.resp_headers_edit = widgets.CodeEditor(
+            placeholder="发送请求后在此显示响应头…", wrap=True)
+        self.resp_headers_edit.setReadOnly(True)
+        lay.addWidget(widgets.expanding(self.resp_headers_edit), 1)
         return w
+
+    def _copy_resp_headers(self):
+        txt = self.resp_headers_edit.text()
+        if not txt.strip():
+            widgets.notify(self, "暂无响应头可复制", "warn")
+            return
+        widgets.copy_text(self, txt, "已复制响应头")
 
     # ------------------------------------------------------------------ #
     #  通用 键/值 表格
@@ -693,7 +706,7 @@ class HttpTool(QWidget):
             self._set_status("错误", "err", res["error"], "", "")
             self._resp = None
             self.resp_editor.set_text(res["error"])
-            self.resp_headers_table.setRowCount(0)
+            self.resp_headers_edit.set_text("")
             widgets.notify(self, res["error"], "error")
             return
 
@@ -714,8 +727,14 @@ class HttpTool(QWidget):
             "status": code, "reason": res.get("reason", ""), "headers": res.get("headers", []),
         }
 
-        # 响应头表
+        # 响应头
         self._fill_headers(res.get("headers", []))
+
+        # 字符集选择器：图片不适用则禁用，其余重置为「自动」
+        self.charset_combo.blockSignals(True)
+        self.charset_combo.setCurrentIndex(0)
+        self.charset_combo.setEnabled(not is_image)
+        self.charset_combo.blockSignals(False)
 
         # 默认视图：图片 -> 预览；JSON -> 格式化；否则原始
         self.view_mode.blockSignals(True)
@@ -729,13 +748,35 @@ class HttpTool(QWidget):
         self._render_body_view()
 
     def _fill_headers(self, headers: list):
-        t = self.resp_headers_table
-        t.setRowCount(0)
-        for k, v in headers:
-            r = t.rowCount()
-            t.insertRow(r)
-            t.setItem(r, 0, QTableWidgetItem(str(k)))
-            t.setItem(r, 1, QTableWidgetItem(str(v)))
+        lines = [f"{k}: {v}" for k, v in headers]
+        self.resp_headers_edit.set_text("\n".join(lines))
+
+    _CHARSET_MAP = {
+        "UTF-8": "utf-8", "GBK": "gbk", "GB18030": "gb18030", "GB2312": "gb2312",
+        "Big5": "big5", "Latin-1": "latin-1", "UTF-16": "utf-16",
+    }
+
+    def _redecode(self):
+        """按所选字符集重新解码响应体，修复乱码。"""
+        r = self._resp
+        if not r or r.get("is_image"):
+            return
+        try:
+            sel = self.charset_combo.currentText()
+            raw = r.get("raw", b"")
+            ct = r.get("content_type", "")
+            if sel == "自动":
+                text = self._decode(raw, ct)
+            else:
+                enc = self._CHARSET_MAP.get(sel, "utf-8")
+                text = raw.decode(enc, errors="replace")
+            pretty, json_ok = self._prettify(text, ct)
+            r["text"] = text
+            r["pretty"] = pretty
+            r["json_ok"] = json_ok
+            self._render_body_view()
+        except Exception as e:  # noqa: BLE001
+            widgets.notify(self, f"重新解码失败：{e}", "error")
 
     def _render_body_view(self):
         r = self._resp

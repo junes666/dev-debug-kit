@@ -154,7 +154,7 @@ class JsTool(QWidget):
         top_split.addWidget(code_card)
 
         # 右：变量树
-        tree_card = widgets.Card("变量树", "运行后解析出的变量 / 函数 / 类，双击函数或类填入执行框")
+        tree_card = widgets.Card("变量树", "运行后解析出的函数与类（类可展开查看方法），双击填入执行框")
         self.tree = QTreeWidget()
         self.tree.setColumnCount(3)
         self.tree.setHeaderLabels(["名称", "类型", "签名"])
@@ -305,42 +305,47 @@ class JsTool(QWidget):
     # ------------------------------------------------------------------ #
     def _build_tree(self, scope: list):
         self.tree.clear()
-        if not scope:
-            placeholder = QTreeWidgetItem(["（无变量）", "", ""])
+        # 只保留顶层的函数与类，过滤掉普通变量（object/array/string/...）
+        entries = [e for e in (scope or []) if e.get("kind") in ("function", "class")]
+        if not entries:
+            placeholder = QTreeWidgetItem(["（无函数或类）", "", ""])
             placeholder.setForeground(0, QColor(widgets.pal()["fg_muted"]))
             self.tree.addTopLevelItem(placeholder)
             return
-        for entry in scope:
+        for entry in entries:
             name = entry.get("name", "")
             kind = entry.get("kind", "")
             sig = entry.get("sig", "")
             preview = entry.get("preview", "")
+            members = entry.get("members") or []
             top = QTreeWidgetItem([name, kind, sig])
             color = self._kind_color(kind)
             top.setForeground(0, color)
             top.setForeground(1, color)
             top.setToolTip(2, preview or sig)
-            # 双击模板（函数/类）
-            template = self._call_template(name, kind, entry.get("members") or [])
+            # 双击模板（函数/类）——函数参数仍从作用域数据里取，只是不展开显示
+            template = self._call_template(name, kind, members)
             if template:
                 top.setData(0, Qt.UserRole, template)
-            for m in entry.get("members") or []:
-                m_name = m.get("name", "")
-                m_kind = m.get("kind", "")
-                m_sig = m.get("sig", "")
-                m_prev = m.get("preview")
-                child = QTreeWidgetItem([m_name, m_kind, m_sig])
-                child.setForeground(1, QColor(widgets.pal()["fg_muted"]))
-                if m_prev:
-                    child.setToolTip(2, m_prev)
-                    # 属性/元素：把预览值也显示在签名列，信息更足
-                    child.setText(2, f"{m_sig} = {m_prev}" if m_sig else m_prev)
-                top.addChild(child)
+            # 类：只展开方法与静态方法；函数：作为叶子，不加任何子节点
+            if kind == "class":
+                for m in members:
+                    if m.get("kind") not in ("method", "static"):
+                        continue
+                    m_name = m.get("name", "")
+                    m_kind = m.get("kind", "")
+                    m_sig = m.get("sig", "")
+                    m_prev = m.get("preview")
+                    child = QTreeWidgetItem([m_name, m_kind, m_sig])
+                    child.setForeground(1, QColor(widgets.pal()["fg_muted"]))
+                    if m_prev:
+                        child.setToolTip(2, m_prev)
+                    top.addChild(child)
             self.tree.addTopLevelItem(top)
-        # 默认展开顶层函数/类，便于查看
+        # 默认展开顶层类，便于查看方法
         for i in range(self.tree.topLevelItemCount()):
             it = self.tree.topLevelItem(i)
-            if it.text(1) in ("function", "class"):
+            if it.text(1) == "class":
                 it.setExpanded(True)
 
     @staticmethod

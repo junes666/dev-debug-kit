@@ -7,3 +7,7 @@ pycryptodome>=3.19
 # 可选：二维码解析（不装则解析功能提示安装，其余功能不受影响）
 opencv-python-headless>=4.8
 numpy>=1.24
+
+# 可选：离线翻译（需配合 models/ 神经翻译模型；不装则翻译页提示，其余不受影响）
+ctranslate2>=4.0
+sentencepiece>=0.2

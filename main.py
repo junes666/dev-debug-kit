@@ -28,6 +28,8 @@ MODULES = [
     ("🔀", "JSON 对比",  "app.modules.jsondiff_tool", "JsonDiffTool"),
     ("🔐", "编码加密",   "app.modules.codec_tool",    "CodecTool"),
     ("▦", "二维码",     "app.modules.qrcode_tool",    "QrTool"),
+    ("🌍", "翻译",      "app.modules.translate_tool", "TranslateTool"),
+    ("🔤", "正则",      "app.modules.regex_tool",     "RegexTool"),
 ]
 
 

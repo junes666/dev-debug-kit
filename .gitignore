@@ -6,6 +6,8 @@ __pycache__/
 *.log
 build/
 dist/
+# 翻译神经模型体积大（~160MB），不进仓库；用 download_models.py 或 Release 获取
+models/
 # PyInstaller 生成的 spec 忽略，但保留手写的 devdebug.spec
 *.spec
 !devdebug.spec

@@ -6,11 +6,17 @@
 产物：dist/开发调试.exe
 """
 
+import os
+from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
+
 # 需随程序一起打包的数据文件（运行时读取）
 datas = [
     ("lib", "lib"),        # beautify.js / terser.min.js（JS 引擎使用）
-    ("assets", "assets"),  # 图标
+    ("assets", "assets"),  # 图标 / 树 +- 图标
 ]
+# 翻译模型（若存在则一并打包，约 160MB）
+if os.path.isdir("models"):
+    datas.append(("models", "models"))
 
 # main.py 通过 importlib 动态加载模块，需显式声明，否则打包后找不到
 hiddenimports = [
@@ -20,7 +26,19 @@ hiddenimports = [
     "app.modules.jsondiff_tool",
     "app.modules.codec_tool",
     "app.modules.qrcode_tool",
+    "app.modules.translate_tool",
+    "app.modules.regex_tool",
+    "ctranslate2", "sentencepiece",
 ]
+
+# 翻译引擎的本地动态库/数据（被 try-import 保护，需显式收集）
+binaries = []
+for _pkg in ("ctranslate2", "sentencepiece"):
+    try:
+        binaries += collect_dynamic_libs(_pkg)
+        datas += collect_data_files(_pkg)
+    except Exception:
+        pass
 
 # 排除用不到的重型 Qt 模块，显著减小体积
 excludes = [
@@ -39,7 +57,7 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

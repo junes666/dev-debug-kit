@@ -5,6 +5,8 @@ Qt 的 QSS 不支持变量，这里用调色板字典 + 字符串格式化统一
 """
 from __future__ import annotations
 
+from .resources import res
+
 # ---- 调色板 ----------------------------------------------------------------
 DARK = {
     "bg0": "#0e1320",   # 窗口最底层
@@ -55,6 +57,8 @@ UI = "'Segoe UI','PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Helvetica N
 
 
 def build_qss(p: dict) -> str:
+    plus_url = res("assets/tree_plus.png").as_posix()
+    minus_url = res("assets/tree_minus.png").as_posix()
     return f"""
 * {{
     font-family: {UI};
@@ -153,6 +157,10 @@ QTreeWidget::item:hover, QListWidget::item:hover {{ background: {p['bg3']}; }}
 QHeaderView::section {{ background: {p['bg1']}; color: {p['fg_dim']}; padding: 6px 8px;
     border: none; border-bottom: 1px solid {p['border']}; border-right: 1px solid {p['border']}; font-weight: 600; }}
 QTreeWidget::branch {{ background: transparent; }}
+QTreeView::branch:has-children:closed, QTreeWidget::branch:has-children:closed {{
+    image: url("{plus_url}"); }}
+QTreeView::branch:has-children:open, QTreeWidget::branch:has-children:open {{
+    image: url("{minus_url}"); }}
 
 /* ---- 复选/单选 ---- */
 QCheckBox, QRadioButton {{ color: {p['fg_dim']}; spacing: 7px; }}
