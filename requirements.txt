@@ -1,0 +1,9 @@
+# 必需依赖（联网装一次，之后全离线运行）
+PySide6>=6.5
+quickjs>=1.19.4
+segno>=1.5
+pycryptodome>=3.19
+
+# 可选：二维码解析（不装则解析功能提示安装，其余功能不受影响）
+opencv-python-headless>=4.8
+numpy>=1.24
