@@ -149,6 +149,16 @@ class MainWindow(QMainWindow):
             self._containers[idx].layout().addWidget(page)
         self.stack.setCurrentIndex(idx)
 
+    def closeEvent(self, event):
+        # 退出前让各模块清理后台线程/子进程，避免 QThread 运行中被析构而 abort
+        for w in self._pages:
+            if w is not None and hasattr(w, "cleanup"):
+                try:
+                    w.cleanup()
+                except Exception:
+                    pass
+        super().closeEvent(event)
+
     def toggle_theme(self):
         self.mode = "light" if self.mode == "dark" else "dark"
         widgets.set_mode(self.mode)

@@ -436,7 +436,11 @@ class CodecTool(QWidget):
         if dt is None:
             widgets.notify(self, "无法识别日期格式（如 2026-07-27 12:00:00）", "error")
             return
-        sec = int(dt.timestamp())
+        try:
+            sec = int(dt.timestamp())
+        except (OSError, OverflowError, ValueError):
+            widgets.notify(self, "该日期超出可转换范围", "error")
+            return
         self.date_sec.setText(str(sec))
         self.date_ms.setText(str(sec * 1000))
 

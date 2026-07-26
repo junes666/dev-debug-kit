@@ -381,7 +381,7 @@ class JsonDiffTool(QWidget):
         try:
             kind = self.summary.property("badge") or "muted"
             self._set_summary(self.summary.text(), kind)
-            if self._diffs is not None:
+            if self._diffs:   # 仅有实际对比结果时才重绘，避免把"尚未对比"刷成"完全一致"
                 self._render_diffs(self._diffs)
         except Exception:  # noqa: BLE001
             pass

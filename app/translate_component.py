@@ -21,11 +21,13 @@ from pathlib import Path
 
 from app.resources import res, base_dir
 
-# 需要的运行库 wheel（与打包所用 Python 3.12 / win_amd64 匹配）
+# 精简版首次下载的翻译运行库 wheel（与打包 Python 3.12 / win_amd64 匹配）。
+# 仅翻译所需；OCR 依赖重(onnxruntime/opencv)，只在全离线版内置。
 _WHEELS = [
     ("ctranslate2", "4.8.1"),
     ("sentencepiece", None),   # None = 取最新
     ("numpy", None),
+    ("PyYAML", None),          # ctranslate2 导入期依赖 yaml，必带
 ]
 _MODEL_URLS = {
     "zh_en": "https://argos-net.com/v1/translate-zh_en-1_9.argosmodel",
@@ -93,7 +95,18 @@ def models_available() -> bool:
 
 
 def is_ready() -> bool:
+    """翻译是否可用（ct2 + sentencepiece + 模型）。"""
     return deps_available() and models_available()
+
+
+def ocr_available() -> bool:
+    """图片 OCR 是否可用（rapidocr + onnxruntime，仅全离线版内置）。"""
+    _add_libs_to_path()
+    try:
+        return (importlib.util.find_spec("rapidocr_onnxruntime") is not None
+                and importlib.util.find_spec("onnxruntime") is not None)
+    except Exception:
+        return False
 
 
 def missing_summary() -> str:

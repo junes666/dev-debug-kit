@@ -19,6 +19,12 @@ def serve():
         faulthandler.enable()   # 原生段错误时向 stderr 打印 C 调用栈
     except Exception:
         pass
+    # Windows 控制台默认非 UTF-8，重配 stdin/stdout 为 UTF-8，避免中文乱码/报错
+    for stream in (sys.stdin, sys.stdout):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
     # 精简版：把下载到外置目录的组件加入搜索路径
     try:
@@ -29,8 +35,9 @@ def serve():
         models_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models")
 
     try:
-        from app.translate_engine import Engine
+        from app.translate_engine import Engine, OCR
         eng = Engine(models_root)
+        ocr = OCR()   # 惰性，第一次 OCR 才真正加载模型
     except Exception as e:  # 引擎/依赖导入失败也别静默崩，回报错误
         _emit({"ready": False, "error": f"翻译引擎初始化失败：{e}"})
         return
@@ -43,12 +50,18 @@ def serve():
             continue
         try:
             req = json.loads(line)
-            r = eng.translate(req.get("text", ""), req.get("source", "auto"), req.get("target", "auto"))
-            _emit({"ok": True, "text": r["translated"]})
+            action = req.get("action", "translate")
+            if action == "ocr":
+                text = ocr.recognize(req.get("path", ""))
+                _emit({"ok": True, "text": text})
+            else:
+                r = eng.translate(req.get("text", ""), req.get("source", "auto"), req.get("target", "auto"))
+                _emit({"ok": True, "text": r["translated"]})
         except Exception as e:  # noqa: BLE001
             _emit({"ok": False, "error": str(e) or repr(e)})
 
 
 def _emit(obj):
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    # ensure_ascii=True：输出纯 ASCII(\uXXXX)，任何控制台编码都安全
+    sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()

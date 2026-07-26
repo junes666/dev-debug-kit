@@ -739,7 +739,7 @@ class HttpTool(QWidget):
         # 默认视图：图片 -> 预览；JSON -> 格式化；否则原始
         self.view_mode.blockSignals(True)
         if is_image:
-            self.view_mode.setCurrentIndex(2)
+            self.view_mode.setCurrentIndex(3)   # 「预览」在索引 3（0格式化/1原始文本/2原始报文/3预览）
         elif json_ok:
             self.view_mode.setCurrentIndex(0)
         else:

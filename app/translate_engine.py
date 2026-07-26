@@ -69,6 +69,36 @@ def _load_deps():
     return _CT2, _SPM
 
 
+class OCR:
+    """图片文字识别（rapidocr_onnxruntime）。惰性加载，供图片翻译用。"""
+
+    def __init__(self):
+        self._engine = None
+        self._lock = threading.Lock()
+
+    def _get(self):
+        with self._lock:
+            if self._engine is None:
+                from rapidocr_onnxruntime import RapidOCR
+                self._engine = RapidOCR()
+            return self._engine
+
+    def recognize(self, image_path: str) -> str:
+        import numpy as np
+        from PIL import Image
+        img = Image.open(image_path).convert("RGB")
+        res, _ = self._get()(np.array(img))
+        if not res:
+            return ""
+        items = []
+        for box, txt, score in res:
+            ys = [p[1] for p in box]
+            xs = [p[0] for p in box]
+            items.append((min(ys), min(xs), txt))
+        items.sort(key=lambda it: (round(it[0] / 12.0), it[1]))
+        return "\n".join(it[2] for it in items)
+
+
 class Engine:
     DIRS = {("zh", "en"): "zh_en", ("en", "zh"): "en_zh"}
 
@@ -88,9 +118,15 @@ class Engine:
             ct2, spm = _load_deps()
             base = os.path.join(self.root, name)
             t = ct2.Translator(os.path.join(base, "model"), device="cpu", intra_threads=4)
+            # 先用 LoadFromSerializedProto(bytes)（Python 读文件，对非 ASCII 路径安全）；
+            # 若该版本 sentencepiece 有 pybind11 兼容问题则回退 Load(路径)。
             sp = spm.SentencePieceProcessor()
-            with open(os.path.join(base, "sentencepiece.model"), "rb") as f:
-                sp.LoadFromSerializedProto(f.read())
+            sp_path = os.path.join(base, "sentencepiece.model")
+            try:
+                with open(sp_path, "rb") as f:
+                    sp.LoadFromSerializedProto(f.read())
+            except Exception:
+                sp.Load(sp_path)
             self._cache[name] = (t, sp)
             return t, sp
 

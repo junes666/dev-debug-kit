@@ -32,21 +32,31 @@ hiddenimports = [
     "zxingcpp", "PIL.Image",       # 二维码解码（轻量，替代 opencv）
 ]
 
-# ---- 翻译运行库：仅全离线版内置 ----
+# ---- 翻译 + OCR 运行库：仅全离线版内置 ----
 binaries = []
 if FULL:
-    hiddenimports += ["ctranslate2", "sentencepiece", "numpy"]
+    from PyInstaller.utils.hooks import collect_all
+    hiddenimports += ["ctranslate2", "sentencepiece", "numpy", "yaml",
+                      "rapidocr_onnxruntime", "onnxruntime", "cv2", "shapely", "pyclipper"]
     for _pkg in ("ctranslate2", "sentencepiece"):
         try:
             binaries += collect_dynamic_libs(_pkg)
             datas += collect_data_files(_pkg)
         except Exception:
             pass
+    # OCR：onnxruntime/rapidocr 有大量数据文件(模型/DLL)，用 collect_all 完整收集
+    for _pkg in ("rapidocr_onnxruntime", "onnxruntime"):
+        try:
+            _ds, _bs, _hs = collect_all(_pkg)
+            datas += _ds
+            binaries += _bs
+            hiddenimports += _hs
+        except Exception:
+            pass
 
 # ---- 排除 ----
 excludes = [
     "tkinter", "unittest", "pydoc",
-    "opencv-python", "cv2",               # 已用 zxingcpp 替代
     # 未用的重型 Qt 模块
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtQuick", "PySide6.QtQuick3D", "PySide6.QtQml", "PySide6.QtQmlModels",
@@ -61,8 +71,9 @@ excludes = [
     "PySide6.QtOpenGLWidgets", "PySide6.QtVirtualKeyboard",
 ]
 if not FULL:
-    # 精简版：翻译运行库不内置（首次使用时下载）
-    excludes += ["ctranslate2", "sentencepiece", "numpy"]
+    # 精简版：翻译/OCR 运行库都不内置（QR 解码用 zxingcpp，不需要 cv2）
+    excludes += ["ctranslate2", "sentencepiece", "numpy", "cv2", "opencv-python",
+                 "rapidocr_onnxruntime", "onnxruntime", "shapely", "pyclipper"]
 
 a = Analysis(
     ["main.py"],
