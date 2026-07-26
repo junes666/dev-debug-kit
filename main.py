@@ -97,16 +97,23 @@ class MainWindow(QMainWindow):
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
 
+        # 懒加载：每个标签先放空容器，切换到时才真正构建模块 —— 首屏秒开，
+        # 也避免翻译/opencv 等重模块在启动时拖慢甚至拖挂整个程序。
+        self._containers = []
+        self._pages = [None] * len(MODULES)
         for i, (icon, title, mod_path, cls_name) in enumerate(MODULES):
             btn = QPushButton(f"{icon}  {title}")
             btn.setProperty("nav", True)
             btn.setCheckable(True)
             btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _=False, idx=i: self.stack.setCurrentIndex(idx))
+            btn.clicked.connect(lambda _=False, idx=i: self._activate(idx))
             tl.addWidget(btn)
             self.nav_group.addButton(btn, i)
-            page = _load_module(mod_path, cls_name, title)
-            self.stack.addWidget(page)
+            container = QWidget()
+            clay = QVBoxLayout(container)
+            clay.setContentsMargins(0, 0, 0, 0)
+            self._containers.append(container)
+            self.stack.addWidget(container)
 
         tl.addStretch(1)
         self.theme_btn = QPushButton("☀  浅色")
@@ -119,17 +126,25 @@ class MainWindow(QMainWindow):
         vl.addWidget(self.stack, 1)
 
         self.nav_group.button(0).setChecked(True)
-        self.stack.setCurrentIndex(0)
+        self._activate(0)
+
+    def _activate(self, idx: int):
+        """首次切到某标签时才构建该模块。"""
+        if self._pages[idx] is None:
+            _icon, title, mod_path, cls_name = MODULES[idx]
+            page = _load_module(mod_path, cls_name, title)
+            self._pages[idx] = page
+            self._containers[idx].layout().addWidget(page)
+        self.stack.setCurrentIndex(idx)
 
     def toggle_theme(self):
         self.mode = "light" if self.mode == "dark" else "dark"
         widgets.set_mode(self.mode)
         QApplication.instance().setStyleSheet(theme.qss(self.mode))
         self.theme_btn.setText("🌙  深色" if self.mode == "light" else "☀  浅色")
-        # 通知模块刷新（如实现了 refresh_theme）
-        for i in range(self.stack.count()):
-            w = self.stack.widget(i)
-            if hasattr(w, "refresh_theme"):
+        # 通知已构建的模块刷新（如实现了 refresh_theme）
+        for w in self._pages:
+            if w is not None and hasattr(w, "refresh_theme"):
                 try:
                     w.refresh_theme()
                 except Exception:

@@ -72,8 +72,8 @@ QMainWindow, #Root {{ background: {p['bg0']}; }}
 /* ---- 顶部导航栏 ---- */
 #TopBar {{ background: {p['bg1']}; border-bottom: 1px solid {p['border']}; }}
 #Brand {{ font-size: 16px; font-weight: 700; color: {p['fg']}; }}
-#BrandBadge {{ color: {p['accent_hi']}; background: {p['accent_soft']}; border-radius: 6px;
-    padding: 2px 8px; font-size: 10.5px; font-weight: 600; }}
+#BrandBadge {{ color: {p['accent_hi']}; background: transparent;
+    padding: 2px 4px; font-size: 10.5px; font-weight: 600; }}
 QPushButton[nav="true"] {{
     text-align: center; padding: 8px 15px; border: none; border-radius: 9px;
     color: {p['fg_dim']}; background: transparent; font-size: 13.5px; font-weight: 500;
