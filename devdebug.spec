@@ -28,7 +28,7 @@ hiddenimports = [
     "app.modules.http_tool", "app.modules.js_tool", "app.modules.json_tool",
     "app.modules.jsondiff_tool", "app.modules.codec_tool", "app.modules.qrcode_tool",
     "app.modules.translate_tool", "app.modules.regex_tool",
-    "app.translate_component",
+    "app.translate_component", "app.translate_worker", "app.translate_engine",
     "zxingcpp", "PIL.Image",       # 二维码解码（轻量，替代 opencv）
 ]
 
