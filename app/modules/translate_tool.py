@@ -25,15 +25,36 @@ os.environ.setdefault("KMP_TOPOLOGY_METHOD", "all")
 os.environ.setdefault("KMP_WARNINGS", "0")
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 
-# 依赖用 try import 保护：缺失时模块仍可加载，界面显示提示。
-try:
-    import ctranslate2
-    import sentencepiece as spm
-    _DEPS = True
-except Exception:  # noqa: BLE001
-    ctranslate2 = None
-    spm = None
-    _DEPS = False
+import importlib.util
+
+# 重要：不在模块顶层 import ctranslate2 / sentencepiece。
+# 它们是原生扩展，在某些环境（如打包后的 Windows、缺 CUDA/VC 运行库时）加载会
+# **硬崩溃**，Python 的 try/except 拦不住 —— 会导致"一切到翻译标签就闪退"。
+# 因此这里只用 find_spec 探测是否存在（不触发 DLL 加载），真正的 import 推迟到
+# 用户点击「翻译」后、在后台线程里进行。
+
+
+def _deps_available() -> bool:
+    """仅探测依赖是否存在，不加载其 DLL（避免崩溃）。"""
+    try:
+        return (importlib.util.find_spec("ctranslate2") is not None
+                and importlib.util.find_spec("sentencepiece") is not None)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+_CT2 = None
+_SPM = None
+
+
+def _load_deps():
+    """真正导入原生依赖（可能较重、可能触发 DLL 加载）。仅在翻译线程里调用。"""
+    global _CT2, _SPM
+    if _CT2 is None or _SPM is None:
+        import ctranslate2 as _c
+        import sentencepiece as _s
+        _CT2, _SPM = _c, _s
+    return _CT2, _SPM
 
 
 # --------------------------------------------------------------------------- #
@@ -91,9 +112,10 @@ class Engine:
         with self._lock:
             if name in self._cache:
                 return self._cache[name]
+            ct2, spm = _load_deps()   # 惰性导入，仅在此刻真正加载原生库
             base = os.path.join(self.root, name)
-            t = ctranslate2.Translator(os.path.join(base, "model"),
-                                       device="cpu", intra_threads=4)
+            t = ct2.Translator(os.path.join(base, "model"),
+                               device="cpu", intra_threads=4)
             sp = spm.SentencePieceProcessor()
             with open(os.path.join(base, "sentencepiece.model"), "rb") as f:
                 sp.LoadFromSerializedProto(f.read())
@@ -226,8 +248,8 @@ class TranslateTool(QWidget):
     # ------------------------------------------------------------------ #
     def _check_ready(self):
         hint = ""
-        if not _DEPS:
-            hint = "翻译需要 ctranslate2 与 sentencepiece，且需 models/ 模型目录"
+        if not _deps_available():
+            hint = "翻译组件未安装：pip install ctranslate2 sentencepiece，并放入 models/ 模型目录"
         else:
             try:
                 avail = _get_engine().available()
@@ -255,8 +277,8 @@ class TranslateTool(QWidget):
         self.btn_translate.setText("翻译中…" if running else "翻译")
 
     def _on_translate(self):
-        if not _DEPS:
-            widgets.notify(self, "翻译需要 ctranslate2 与 sentencepiece，且需 models/ 模型目录", "error")
+        if not _deps_available():
+            widgets.notify(self, "翻译组件未安装：pip install ctranslate2 sentencepiece，并放入 models/ 模型", "error")
             return
         if self._busy():
             widgets.notify(self, "上一次翻译还在进行中，请稍候", "warn")
