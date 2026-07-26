@@ -7,8 +7,15 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 import traceback
+
+# 关键：在加载任何原生库前设置。避免 ctranslate2 与 numpy/MKL 各自带一份 OpenMP 运行库
+# 导致真 Windows 上 "OMP: Error #15 ... libiomp5md.dll already initialized" 直接 abort，
+# 这是翻译功能在打包后闪退的常见根因之一。
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "4")
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont

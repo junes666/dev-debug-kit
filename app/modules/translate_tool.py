@@ -20,36 +20,26 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QComboBox, QSplitter
 from app import widgets
 from app.resources import res
 
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 防 OpenMP 重复加载 abort
 os.environ.setdefault("KMP_AFFINITY", "disabled")
 os.environ.setdefault("KMP_TOPOLOGY_METHOD", "all")
 os.environ.setdefault("KMP_WARNINGS", "0")
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 
-import importlib.util
+from app import translate_component as tc
 
-# 重要：不在模块顶层 import ctranslate2 / sentencepiece。
-# 它们是原生扩展，在某些环境（如打包后的 Windows、缺 CUDA/VC 运行库时）加载会
-# **硬崩溃**，Python 的 try/except 拦不住 —— 会导致"一切到翻译标签就闪退"。
-# 因此这里只用 find_spec 探测是否存在（不触发 DLL 加载），真正的 import 推迟到
-# 用户点击「翻译」后、在后台线程里进行。
-
-
-def _deps_available() -> bool:
-    """仅探测依赖是否存在，不加载其 DLL（避免崩溃）。"""
-    try:
-        return (importlib.util.find_spec("ctranslate2") is not None
-                and importlib.util.find_spec("sentencepiece") is not None)
-    except Exception:  # noqa: BLE001
-        return False
-
-
+# 重要：不在模块顶层 import ctranslate2 / sentencepiece。它们是原生扩展，在打包后的
+# Windows、缺 CUDA/VC 运行库时加载会**硬崩溃**，try/except 拦不住 —— 会导致一到翻译
+# 标签就闪退。存在性探测交给 translate_component（只用 find_spec，不加载 DLL），真正
+# import 推迟到点击翻译后、后台线程里进行。
 _CT2 = None
 _SPM = None
 
 
 def _load_deps():
-    """真正导入原生依赖（可能较重、可能触发 DLL 加载）。仅在翻译线程里调用。"""
+    """真正导入原生依赖（惰性、后台线程调用）。"""
     global _CT2, _SPM
+    tc._add_libs_to_path()   # 精简版：把外置组件目录加入搜索路径
     if _CT2 is None or _SPM is None:
         import ctranslate2 as _c
         import sentencepiece as _s
@@ -102,7 +92,7 @@ class Engine:
     def __init__(self):
         self._cache = {}
         self._lock = threading.Lock()
-        self.root = str(res("models"))
+        self.root = str(tc.models_root())
 
     def available(self):
         return [d for d in ("zh_en", "en_zh")
@@ -188,6 +178,19 @@ class _TranslateWorker(QThread):
         self.done.emit(out)
 
 
+class _DownloadWorker(QThread):
+    """精简版：后台下载翻译组件(ct2/sentencepiece/numpy + 模型)。"""
+    progress = Signal(str, int, int)   # 阶段, 已下载, 总量
+    finished_ok = Signal(str)          # "" 表示成功，否则为错误信息
+
+    def run(self):
+        try:
+            tc.download_all(lambda s, d, t: self.progress.emit(s, d, t))
+            self.finished_ok.emit("")
+        except Exception as e:  # noqa: BLE001
+            self.finished_ok.emit(str(e) or "下载失败")
+
+
 # --------------------------------------------------------------------------- #
 #  主模块
 # --------------------------------------------------------------------------- #
@@ -215,11 +218,15 @@ class TranslateTool(QWidget):
         self.btn_translate = widgets.primary("翻译", self._on_translate, "在后台加载模型并翻译（首次较慢）")
         self.btn_clear = widgets.ghost("清空", self._on_clear, "清空原文与译文")
         self.btn_copy = widgets.chip("复制结果", self._on_copy, "复制译文到剪贴板")
+        self.btn_download = widgets.primary("下载翻译组件", self._on_download,
+                                            "从 PyPI/argos 下载翻译运行库与中英模型（约180MB，一次性，之后离线）")
+        self.btn_download.hide()
+        self._dl_worker: _DownloadWorker | None = None
 
         root.addWidget(widgets.row(
             widgets.label("方向", "label"), self.dir_combo,
             None,
-            self.btn_translate, self.btn_clear, self.btn_copy,
+            self.btn_download, self.btn_translate, self.btn_clear, self.btn_copy,
         ))
 
         # ---- 主体：左原文 / 右译文 -------------------------------------- #
@@ -247,22 +254,54 @@ class TranslateTool(QWidget):
     #  就绪检查：依赖缺失或无模型时禁用翻译并提示
     # ------------------------------------------------------------------ #
     def _check_ready(self):
-        hint = ""
-        if not _deps_available():
-            hint = "翻译组件未安装：pip install ctranslate2 sentencepiece，并放入 models/ 模型目录"
+        if tc.is_ready():
+            self.btn_download.hide()
+            self.btn_translate.setEnabled(True)
+            self.src_edit.setReadOnly(False)
+            self.src_edit.setPlaceholderText("在此输入要翻译的中文或英文…")
+            self.dst_edit.setPlaceholderText("译文显示在这里…")
+            return
+        # 未就绪（精简版首次使用）——提供一键下载
+        miss = tc.missing_summary()
+        hint = (f"翻译组件未安装（缺：{miss}）。点击「下载翻译组件」自动下载"
+                f"（约 180MB，一次性；之后完全离线）。也可克隆源码离线整包运行。")
+        self.btn_translate.setEnabled(False)
+        self.src_edit.setReadOnly(True)
+        self.src_edit.set_text("")
+        self.src_edit.setPlaceholderText(hint)
+        self.dst_edit.setPlaceholderText(hint)
+        self.btn_download.show()
+
+    # ------------------------------------------------------------------ #
+    #  下载翻译组件（精简版）
+    # ------------------------------------------------------------------ #
+    def _on_download(self):
+        if self._dl_worker is not None and self._dl_worker.isRunning():
+            return
+        self.btn_download.setEnabled(False)
+        self.btn_download.setText("下载中…")
+        self.dst_edit.setPlaceholderText("正在下载翻译组件，请保持联网…")
+        self._dl_worker = _DownloadWorker(self)
+        self._dl_worker.progress.connect(self._on_dl_progress)
+        self._dl_worker.finished_ok.connect(self._on_dl_done)
+        self._dl_worker.finished.connect(self._dl_worker.deleteLater)
+        self._dl_worker.start()
+
+    def _on_dl_progress(self, stage: str, done: int, total: int):
+        if total > 0:
+            self.btn_download.setText(f"{stage} {done * 100 // total}%")
         else:
-            try:
-                avail = _get_engine().available()
-            except Exception:  # noqa: BLE001
-                avail = []
-            if not avail:
-                hint = "翻译需要 ctranslate2 与 sentencepiece，且需 models/ 模型目录"
-        if hint:
-            self.btn_translate.setEnabled(False)
-            self.src_edit.setReadOnly(True)
-            self.src_edit.set_text("")
-            self.src_edit.setPlaceholderText(hint)
-            self.dst_edit.setPlaceholderText(hint)
+            self.btn_download.setText(f"{stage}…")
+
+    def _on_dl_done(self, error: str):
+        self._dl_worker = None
+        self.btn_download.setEnabled(True)
+        self.btn_download.setText("下载翻译组件")
+        if error:
+            widgets.notify(self, f"下载失败：{error}", "error")
+            return
+        widgets.notify(self, "翻译组件已就绪", "success")
+        self._check_ready()
 
     # ------------------------------------------------------------------ #
     #  运行
@@ -277,8 +316,9 @@ class TranslateTool(QWidget):
         self.btn_translate.setText("翻译中…" if running else "翻译")
 
     def _on_translate(self):
-        if not _deps_available():
-            widgets.notify(self, "翻译组件未安装：pip install ctranslate2 sentencepiece，并放入 models/ 模型", "error")
+        if not tc.is_ready():
+            widgets.notify(self, "翻译组件未安装，请先点击「下载翻译组件」", "error")
+            self._check_ready()
             return
         if self._busy():
             widgets.notify(self, "上一次翻译还在进行中，请稍候", "warn")

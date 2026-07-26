@@ -1,10 +1,10 @@
-"""二维码 生成 / 解析 模块（生成离线用 segno；解析可选 opencv）。"""
+"""二维码 生成 / 解析 模块（生成离线用 segno；解析可选 zxing-cpp）。"""
 from __future__ import annotations
 
 import io
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QBuffer, QByteArray
 from PySide6.QtGui import QPixmap, QColor, QImage
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QComboBox, QSpinBox, QLineEdit,
@@ -20,11 +20,11 @@ except Exception:  # noqa: BLE001
     _SEGNO = False
 
 try:
-    import cv2
-    import numpy as np
-    _CV2 = True
+    import zxingcpp
+    from PIL import Image as _PILImage
+    _ZXING = True
 except Exception:  # noqa: BLE001
-    _CV2 = False
+    _ZXING = False
 
 
 class QrTool(QWidget):
@@ -181,9 +181,9 @@ class QrTool(QWidget):
             None,
             widgets.chip("复制结果", lambda: widgets.copy_text(self, self.decode_out.text())),
         ]
-        if not _CV2:
+        if not _ZXING:
             lay.addWidget(widgets.label(
-                "二维码解析需要 opencv：pip install opencv-python-headless numpy（安装后重启即可用）", "hint"))
+                "二维码解析需要 zxing-cpp：pip install zxing-cpp（安装后重启即可用）", "hint"))
             for b in bar[:2]:
                 b.setEnabled(False)
         lay.addWidget(widgets.row(*bar))
@@ -230,7 +230,7 @@ class QrTool(QWidget):
         self.decode_preview.setPixmap(QPixmap.fromImage(img).scaled(
             420, 420, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         self.decode_preview.setText("")
-        if not _CV2:
+        if not _ZXING:
             return
         try:
             data = self._decode_qr(img)
@@ -244,21 +244,19 @@ class QrTool(QWidget):
             widgets.notify(self, f"解析失败：{e}", "error")
 
     @staticmethod
-    def _decode_qr(img: QImage) -> str:
-        rgba = img.convertToFormat(QImage.Format_RGBA8888)
-        w, h = rgba.width(), rgba.height()
-        buf = rgba.constBits()
-        arr = np.frombuffer(bytes(buf[: w * h * 4]), dtype=np.uint8).reshape(h, w, 4)
-        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-        det = cv2.QRCodeDetector()
-        data, _pts, _ = det.detectAndDecode(bgr)
-        if data:
-            return data
-        # 尝试多码识别
-        try:
-            ok, decoded, _p, _s = det.detectAndDecodeMulti(bgr)
-            if ok and decoded:
-                return "\n".join([d for d in decoded if d])
-        except Exception:
-            pass
-        return ""
+    def _qimage_to_pil(img: QImage):
+        """把 QImage 编码成 PNG 再交给 Pillow，避免依赖 numpy 处理原始缓冲。"""
+        ba = QByteArray()
+        buf = QBuffer(ba)
+        buf.open(QBuffer.ReadWrite)
+        img.save(buf, "PNG")
+        buf.close()
+        return _PILImage.open(io.BytesIO(bytes(ba))).convert("RGB")
+
+    @classmethod
+    def _decode_qr(cls, img: QImage) -> str:
+        pil = cls._qimage_to_pil(img)
+        # zxing-cpp 直接接受 PIL.Image，天然支持多码识别
+        results = zxingcpp.read_barcodes(pil)
+        texts = [r.text for r in results if getattr(r, "valid", True) and r.text]
+        return "\n".join(texts)

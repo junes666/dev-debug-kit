@@ -1,48 +1,53 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置：开发调试 · Dev Debug Kit（单文件 exe）。
+"""PyInstaller 打包配置：开发调试 · Dev Debug Kit（onedir，秒启动）。
 
-在 Windows 上：  pip install -r requirements.txt pyinstaller
-                pyinstaller --noconfirm --clean devdebug.spec
-产物：dist/开发调试.exe
+一份 spec 出两个版本，用环境变量切换：
+  - 全离线版：DEVDEBUG_FULL=1 pyinstaller --noconfirm --clean devdebug.spec
+      内置 ctranslate2 + sentencepiece + numpy + models/，翻译开箱即用。
+  - 精简版（默认）：pyinstaller --noconfirm --clean devdebug.spec
+      不含翻译运行库与模型，翻译首次使用时自动下载；体积几十 MB。
+
+打包后建议运行 scripts/trim_qt.py 清理未用的 Qt 组件。
+产物：dist/开发调试/开发调试.exe
 """
-
 import os
 from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
 
-# 需随程序一起打包的数据文件（运行时读取）
+FULL = os.environ.get("DEVDEBUG_FULL") == "1"
+
+# ---- 数据文件 ----
 datas = [
-    ("lib", "lib"),        # beautify.js / terser.min.js（JS 引擎使用）
+    ("lib", "lib"),        # beautify.js / terser.min.js（JS 引擎）
     ("assets", "assets"),  # 图标 / 树 +- 图标
 ]
-# 翻译模型（若存在则一并打包，约 160MB）
-if os.path.isdir("models"):
-    datas.append(("models", "models"))
+if FULL and os.path.isdir("models"):
+    datas.append(("models", "models"))   # 仅全离线版内置翻译模型（~160MB）
 
-# main.py 通过 importlib 动态加载模块，需显式声明，否则打包后找不到
+# ---- 动态导入的模块（main.py 用 importlib 加载）----
 hiddenimports = [
-    "app.modules.http_tool",
-    "app.modules.js_tool",
-    "app.modules.json_tool",
-    "app.modules.jsondiff_tool",
-    "app.modules.codec_tool",
-    "app.modules.qrcode_tool",
-    "app.modules.translate_tool",
-    "app.modules.regex_tool",
-    "ctranslate2", "sentencepiece",
+    "app.modules.http_tool", "app.modules.js_tool", "app.modules.json_tool",
+    "app.modules.jsondiff_tool", "app.modules.codec_tool", "app.modules.qrcode_tool",
+    "app.modules.translate_tool", "app.modules.regex_tool",
+    "app.translate_component",
+    "zxingcpp", "PIL.Image",       # 二维码解码（轻量，替代 opencv）
 ]
 
-# 翻译引擎的本地动态库/数据（被 try-import 保护，需显式收集）
+# ---- 翻译运行库：仅全离线版内置 ----
 binaries = []
-for _pkg in ("ctranslate2", "sentencepiece"):
-    try:
-        binaries += collect_dynamic_libs(_pkg)
-        datas += collect_data_files(_pkg)
-    except Exception:
-        pass
+if FULL:
+    hiddenimports += ["ctranslate2", "sentencepiece", "numpy"]
+    for _pkg in ("ctranslate2", "sentencepiece"):
+        try:
+            binaries += collect_dynamic_libs(_pkg)
+            datas += collect_data_files(_pkg)
+        except Exception:
+            pass
 
-# 排除用不到的重型 Qt 模块，显著减小体积
+# ---- 排除 ----
 excludes = [
-    "tkinter",
+    "tkinter", "unittest", "pydoc",
+    "opencv-python", "cv2",               # 已用 zxingcpp 替代
+    # 未用的重型 Qt 模块
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtQuick", "PySide6.QtQuick3D", "PySide6.QtQml", "PySide6.QtQmlModels",
     "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
@@ -52,7 +57,12 @@ excludes = [
     "PySide6.QtSensors", "PySide6.QtSerialPort", "PySide6.QtBluetooth", "PySide6.QtNfc",
     "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtTest", "PySide6.QtPdf",
     "PySide6.QtPdfWidgets", "PySide6.QtQuickWidgets", "PySide6.QtRemoteObjects",
+    "PySide6.QtNetwork", "PySide6.QtSvg", "PySide6.QtSvgWidgets", "PySide6.QtOpenGL",
+    "PySide6.QtOpenGLWidgets", "PySide6.QtVirtualKeyboard",
 ]
+if not FULL:
+    # 精简版：翻译运行库不内置（首次使用时下载）
+    excludes += ["ctranslate2", "sentencepiece", "numpy"]
 
 a = Analysis(
     ["main.py"],
@@ -65,23 +75,20 @@ a = Analysis(
     runtime_hooks=[],
     excludes=excludes,
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 
 pyz = PYZ(a.pure)
 
-# onedir（文件夹）模式：不再每次启动解包，秒启动。
 exe = EXE(
-    pyz,
-    a.scripts,
-    [],
+    pyz, a.scripts, [],
     exclude_binaries=True,
     name="开发调试",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=False,          # GUI 应用，不弹控制台
+    upx=False,               # 关闭 upx：避免部分 Windows/杀软下 DLL 加载异常
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -91,11 +98,7 @@ exe = EXE(
 )
 
 coll = COLLECT(
-    exe,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
+    exe, a.binaries, a.datas,
+    strip=False, upx=False, upx_exclude=[],
     name="开发调试",
 )

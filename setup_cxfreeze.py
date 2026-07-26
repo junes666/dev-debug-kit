@@ -14,7 +14,7 @@ from cx_Freeze import setup, Executable
 
 build_exe_options = {
     "packages": ["app", "app.modules", "PySide6", "shiboken6", "quickjs", "segno",
-                 "Crypto", "cv2", "numpy", "urllib", "json", "hashlib", "hmac"],
+                 "Crypto", "zxingcpp", "PIL", "urllib", "json", "hashlib", "hmac"],
     "includes": [
         "app.modules.http_tool", "app.modules.js_tool", "app.modules.json_tool",
         "app.modules.jsondiff_tool", "app.modules.codec_tool", "app.modules.qrcode_tool",
