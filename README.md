@@ -59,26 +59,17 @@ python main.py
 
 ## 打包成可执行文件（exe）
 
-无需装 Python 也能运行。有两种方式：
-
-**① 单文件 exe（PyInstaller，推荐在 Windows 上执行）**
+无需装 Python 也能运行。直接去 [Releases](https://github.com/junes666/dev-debug-kit/releases) 下载打好的 Windows 免安装版，或自行打包：
 
 ```bat
 :: Windows：双击 build.bat，或手动执行
 pip install -r requirements.txt pyinstaller
 pyinstaller --noconfirm --clean devdebug.spec
-:: 产物：dist\开发调试.exe（单个文件，可直接分发）
+:: 产物：dist\开发调试\ 文件夹（onedir 模式），双击其中的 开发调试.exe 运行
 ```
 
-Linux / macOS 打包本平台可执行文件：`./build.sh`。
-
-**② 文件夹版（cx_Freeze，跨 Wine 打包更稳）**
-
-```bash
-pip install cx_Freeze
-python setup_cxfreeze.py build_exe
-:: 产物：build/exe.win-amd64-3.x/ 整个文件夹，内含 开发调试.exe
-```
+> 采用 **onedir（文件夹）模式**：启动无需每次解包，**秒启动**；整个 `dist\开发调试\` 文件夹一起分发（可压缩成 zip）。
+> Linux / macOS 打包本平台版本：`./build.sh`。备用打包方案见 `setup_cxfreeze.py`。
 
 > Releases 页提供已打好的 Windows 版下载（免安装，解压即用）。
 
