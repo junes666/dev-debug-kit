@@ -6,4 +6,6 @@ __pycache__/
 *.log
 build/
 dist/
+# PyInstaller 生成的 spec 忽略，但保留手写的 devdebug.spec
 *.spec
+!devdebug.spec

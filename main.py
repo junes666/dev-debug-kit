@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import theme, widgets
+from app.resources import res
 
 # (图标, 标题, 模块文件, 类名)
 MODULES = [
@@ -61,6 +62,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.mode = "dark"
         self.setWindowTitle("开发调试 · Dev Debug Kit")
+        _icon = res("assets/icon.png")
+        if _icon.exists():
+            self.setWindowIcon(QIcon(str(_icon)))
         self.resize(1280, 820)
         self.setMinimumSize(1040, 640)
 
@@ -135,6 +139,9 @@ def main():
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setApplicationName("开发调试")
+    _icon = res("assets/icon.png")
+    if _icon.exists():
+        app.setWindowIcon(QIcon(str(_icon)))
     widgets.set_mode("dark")
     app.setStyleSheet(theme.qss("dark"))
     win = MainWindow()

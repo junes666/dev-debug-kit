@@ -53,6 +53,31 @@ python main.py
 > 所有第三方库仅在**首次安装**时联网下载；安装完成后本工具**运行期不联网**（HTTP 调试模块除外——它本就是用来发你指定的请求的）。
 > `lib/` 下的 `beautify.js`、`terser.min.js` 为随仓库内置的离线 JS 库，供 JS 引擎调用。
 
+## 打包成可执行文件（exe）
+
+无需装 Python 也能运行。有两种方式：
+
+**① 单文件 exe（PyInstaller，推荐在 Windows 上执行）**
+
+```bat
+:: Windows：双击 build.bat，或手动执行
+pip install -r requirements.txt pyinstaller
+pyinstaller --noconfirm --clean devdebug.spec
+:: 产物：dist\开发调试.exe（单个文件，可直接分发）
+```
+
+Linux / macOS 打包本平台可执行文件：`./build.sh`。
+
+**② 文件夹版（cx_Freeze，跨 Wine 打包更稳）**
+
+```bash
+pip install cx_Freeze
+python setup_cxfreeze.py build_exe
+:: 产物：build/exe.win-amd64-3.x/ 整个文件夹，内含 开发调试.exe
+```
+
+> Releases 页提供已打好的 Windows 版下载（免安装，解压即用）。
+
 ## 目录结构
 
 ```

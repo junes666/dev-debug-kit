@@ -8,10 +8,11 @@
 from __future__ import annotations
 
 import json
-import pathlib
 import quickjs
 
-_LIB = pathlib.Path(__file__).resolve().parent.parent / "lib"
+from .resources import res
+
+_LIB = res("lib")
 
 # --------------------------------------------------------------------------- #
 #  JS 侧公共前奏：console 捕获 + 变量解析 helper
