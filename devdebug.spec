@@ -1,63 +1,47 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller 打包配置：开发调试 · Dev Debug Kit（onedir，秒启动）。
+"""PyInstaller 打包配置：开发调试 · Dev Debug Kit（onedir）。
 
-一份 spec 出两个版本，用环境变量切换：
-  - 全离线版：DEVDEBUG_FULL=1 pyinstaller --noconfirm --clean devdebug.spec
-      内置 ctranslate2 + sentencepiece + numpy + models/，翻译开箱即用。
-  - 精简版（默认）：pyinstaller --noconfirm --clean devdebug.spec
-      不含翻译运行库与模型，翻译首次使用时自动下载；体积几十 MB。
+翻译/OCR 原生库（ctranslate2、sentencepiece、onnxruntime…）**不打进 exe**，
+避免 Windows 上冻结导入 access violation。全离线版由 scripts/pack_offline_runtime.py
+把 libs+models 放到 dist/开发调试/translate_data/。
 
-打包后建议运行 scripts/trim_qt.py 清理未用的 Qt 组件。
-产物：dist/开发调试/开发调试.exe
+  精简版：pyinstaller --noconfirm --clean devdebug.spec
+  全离线：同上后再跑 pack_offline_runtime.py（或 build 脚本）
 """
 import os
 from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
 
-FULL = os.environ.get("DEVDEBUG_FULL") == "1"
-
-# ---- 数据文件 ----
+# ---- 数据文件：仅 UI / JS，不含翻译原生库与大模型 ----
+# translate 纯 py 以文件形式打入，便于「下载离线组件」拷到 translate_data/app
 datas = [
-    ("lib", "lib"),        # beautify.js / terser.min.js（JS 引擎）
-    ("assets", "assets"),  # 图标 / 树 +- 图标
+    ("lib", "lib"),
+    ("assets", "assets"),
+    ("app/__init__.py", "app"),
+    ("app/resources.py", "app"),
+    ("app/translate_engine.py", "app"),
+    ("app/translate_component.py", "app"),
+    ("app/translate_deps.py", "app"),
+    ("app/translate_worker.py", "app"),
+    ("app/translate_data_worker.py", "app"),
 ]
-if FULL and os.path.isdir("models"):
-    datas.append(("models", "models"))   # 仅全离线版内置翻译模型（~160MB）
 
-# ---- 动态导入的模块（main.py 用 importlib 加载）----
 hiddenimports = [
     "app.modules.http_tool", "app.modules.js_tool", "app.modules.json_tool",
     "app.modules.jsondiff_tool", "app.modules.codec_tool", "app.modules.qrcode_tool",
     "app.modules.translate_tool", "app.modules.regex_tool",
     "app.translate_component", "app.translate_worker", "app.translate_engine",
-    "zxingcpp", "PIL.Image",       # 二维码解码（轻量，替代 opencv）
+    "app.translate_deps", "app.translate_data_worker", "app.resources",
+    "zxingcpp", "PIL.Image",
 ]
 
-# ---- 翻译 + OCR 运行库：仅全离线版内置 ----
 binaries = []
-if FULL:
-    from PyInstaller.utils.hooks import collect_all
-    hiddenimports += ["ctranslate2", "sentencepiece", "numpy", "yaml",
-                      "rapidocr_onnxruntime", "onnxruntime", "cv2", "shapely", "pyclipper"]
-    for _pkg in ("ctranslate2", "sentencepiece"):
-        try:
-            binaries += collect_dynamic_libs(_pkg)
-            datas += collect_data_files(_pkg)
-        except Exception:
-            pass
-    # OCR：onnxruntime/rapidocr 有大量数据文件(模型/DLL)，用 collect_all 完整收集
-    for _pkg in ("rapidocr_onnxruntime", "onnxruntime"):
-        try:
-            _ds, _bs, _hs = collect_all(_pkg)
-            datas += _ds
-            binaries += _bs
-            hiddenimports += _hs
-        except Exception:
-            pass
 
-# ---- 排除 ----
+# 明确排除：翻译/OCR 原生栈一律外置 translate_data，禁止打进 _internal
 excludes = [
     "tkinter", "unittest", "pydoc",
-    # 未用的重型 Qt 模块
+    "ctranslate2", "sentencepiece", "numpy", "yaml", "PyYAML",
+    "cv2", "opencv-python", "opencv-python-headless",
+    "rapidocr_onnxruntime", "onnxruntime", "shapely", "pyclipper",
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.QtQuick", "PySide6.QtQuick3D", "PySide6.QtQml", "PySide6.QtQmlModels",
     "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.Qt3DAnimation", "PySide6.Qt3DExtras",
@@ -70,10 +54,6 @@ excludes = [
     "PySide6.QtNetwork", "PySide6.QtSvg", "PySide6.QtSvgWidgets", "PySide6.QtOpenGL",
     "PySide6.QtOpenGLWidgets", "PySide6.QtVirtualKeyboard",
 ]
-if not FULL:
-    # 精简版：翻译/OCR 运行库都不内置（QR 解码用 zxingcpp，不需要 cv2）
-    excludes += ["ctranslate2", "sentencepiece", "numpy", "cv2", "opencv-python",
-                 "rapidocr_onnxruntime", "onnxruntime", "shapely", "pyclipper"]
 
 a = Analysis(
     ["main.py"],
@@ -98,7 +78,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,               # 关闭 upx：避免部分 Windows/杀软下 DLL 加载异常
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,

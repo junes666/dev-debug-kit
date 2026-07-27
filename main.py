@@ -16,11 +16,8 @@ import traceback
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "4")
 
-# 翻译子进程模式：主程序用独立子进程跑 ctranslate2，隔离原生崩溃。此分支不加载 PySide6。
-if "--translate-worker" in sys.argv:
-    from app.translate_worker import serve
-    serve()
-    sys.exit(0)
+# 翻译/OCR 仅由 translate_data/py/python.exe + worker_main.py 外置进程加载原生库。
+# 禁止在冻结主进程内启动翻译 worker（会 import 原生扩展并 AV）。
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont

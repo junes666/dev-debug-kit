@@ -21,12 +21,14 @@
 
 见 [Releases](https://github.com/junes666/dev-debug-kit/releases)，提供两个版本：
 
-| 版本 | 体积 | 说明 |
+| 版本 | 体积（约） | 说明 |
 |------|------|------|
-| **精简版** `开发调试-精简版-win64.zip` | ~35 MB | 秒启动。7 个核心功能全部内置离线；**翻译**首次点「下载翻译组件」自动下载(约180MB)后离线；**图片OCR翻译需全离线版** |
-| **全离线版** `开发调试-全离线版-win64.zip` | ~250 MB | **翻译 + 图片OCR翻译全内置**，开箱即用、全程不联网 |
+| **精简版** `开发调试-精简版-win64.zip` | ~33 MB | 秒启动。核心功能内置离线；**翻译/OCR 首次**点「下载离线组件」自动安装到 `translate_data/`（外置 CPython + 钉死运行库 + OCR + 中英模型，约 250–300MB 下载，仅一次），之后完全离线。**图片 OCR 翻译精简版同样支持**（下载时默认含 OCR）。 |
+| **全离线版** `开发调试-全离线版-win64.zip` | ~280 MB | **翻译 + 图片 OCR 全内置**（含 `translate_data/py/python.exe`、libs、models），开箱即用、全程不联网。 |
 
-> 都是 onedir 文件夹（秒启动、无需装 Python）；解压后双击 `开发调试.exe`。首次运行被 SmartScreen 拦截时选「仍要运行」。
+> 都是 onedir 文件夹（秒启动、无需装 Python）；**务必完整解压**（全离线版须含 `translate_data/` 目录）。双击 `开发调试.exe`。首次运行被 SmartScreen 拦截时选「仍要运行」。
+>
+> 翻译/OCR **不在**冻结的 exe 进程里加载原生库，而由 `translate_data/py/python.exe` + `worker_main.py` 子进程运行，避免 Windows access violation。
 
 ## 安装与运行
 
@@ -72,17 +74,31 @@ python main.py
 
 无需装 Python 也能运行。直接去 [Releases](https://github.com/junes666/dev-debug-kit/releases) 下载打好的 Windows 免安装版，或自行打包：
 
-```bat
-:: Windows：双击 build.bat，或手动执行
-pip install -r requirements.txt pyinstaller
-pyinstaller --noconfirm --clean devdebug.spec
-:: 产物：dist\开发调试\ 文件夹（onedir 模式），双击其中的 开发调试.exe 运行
+**推荐：在 Linux + Wine11 上打 win64 发行包**（精简版 + 全离线版；翻译依赖为钉死 wheel）：
+
+```bash
+# 完整构建（PyInstaller → 精简 zip → pack translate_data → 全离线 zip）
+bash scripts/build_win64.sh
+
+# 仅校验已有两个 ZIP 的 CRC / SHA256 / VERSIONS（不跑 PyInstaller）
+bash scripts/build_win64.sh --verify-zips
+
+# 翻译/OCR 自动验收
+python3 scripts/test_translate_deps.py
+python3 scripts/accept_translate.py --skip-download
 ```
 
-> 采用 **onedir（文件夹）模式**：启动无需每次解包，**秒启动**；整个 `dist\开发调试\` 文件夹一起分发（可压缩成 zip）。
-> Linux / macOS 打包本平台版本：`./build.sh`。备用打包方案见 `setup_cxfreeze.py`。
+产物：`开发调试-精简版-win64.zip`、`开发调试-全离线版-win64.zip`，以及 `dist/开发调试/`（onedir）。
 
-> Releases 页提供已打好的 Windows 版下载（免安装，解压即用）。
+```bat
+:: 仅 Windows 本机打 UI 壳（不含完整离线 translate_data 装配）：
+pip install -r requirements.txt pyinstaller
+pyinstaller --noconfirm --clean devdebug.spec
+:: 全离线布局请用 bash scripts/build_win64.sh 或 scripts/pack_offline_runtime.py
+```
+
+> 采用 **onedir（文件夹）模式**：秒启动。翻译原生库（ctranslate2 / sentencepiece / onnxruntime 等）**不打进** `_internal`，由 `translate_data/` 外置提供。
+> Linux / macOS 本平台版本：`./build.sh`。备用方案见 `setup_cxfreeze.py`。
 
 ## 目录结构
 
